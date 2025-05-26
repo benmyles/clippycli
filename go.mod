@@ -1,4 +1,4 @@
-module github.com/benmyles/cliclippy
+module github.com/benmyles/clippycli
 
 go 1.24.3
 
