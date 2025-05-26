@@ -2,6 +2,8 @@ package main
 
 import (
 	"testing"
+
+	"github.com/atotto/clipboard"
 )
 
 func TestMin(t *testing.T) {
@@ -28,7 +30,7 @@ func TestMin(t *testing.T) {
 }
 
 func TestInitialModel(t *testing.T) {
-	model := initialModel("")
+	model := initialModel("", false)
 
 	// Test initial state
 	if model.state != stateInput {
@@ -44,11 +46,16 @@ func TestInitialModel(t *testing.T) {
 	if model.anthropicClient == nil {
 		t.Error("Expected anthropic client to be initialized")
 	}
+
+	// Test that verbose is set correctly
+	if model.verbose != false {
+		t.Error("Expected verbose to be false")
+	}
 }
 
 func TestInitialModelWithPrompt(t *testing.T) {
 	prompt := "list all files"
-	model := initialModel(prompt)
+	model := initialModel(prompt, false)
 
 	// Test initial state - should be loading when prompt is provided
 	if model.state != stateLoading {
@@ -73,7 +80,7 @@ func TestInitialModelWithPrompt(t *testing.T) {
 
 func TestInitWithPrompt(t *testing.T) {
 	prompt := "test prompt"
-	model := initialModel(prompt)
+	model := initialModel(prompt, false)
 
 	// Init should return commands including generateCommand when starting with a prompt
 	cmd := model.Init()
@@ -83,12 +90,32 @@ func TestInitWithPrompt(t *testing.T) {
 }
 
 func TestInitWithoutPrompt(t *testing.T) {
-	model := initialModel("")
+	model := initialModel("", false)
 
 	// Init should return basic commands when starting without a prompt
 	cmd := model.Init()
 	if cmd == nil {
 		t.Error("Expected Init to return a command")
+	}
+}
+
+func TestCopyToClipboard(t *testing.T) {
+	testCommand := "ls -la"
+
+	// Test copying to clipboard
+	err := copyToClipboard(testCommand)
+	if err != nil {
+		t.Errorf("copyToClipboard failed: %v", err)
+	}
+
+	// Verify the command was copied to clipboard
+	clipboardContent, err := clipboard.ReadAll()
+	if err != nil {
+		t.Fatalf("Failed to read from clipboard: %v", err)
+	}
+
+	if clipboardContent != testCommand {
+		t.Errorf("Expected clipboard content %q, got %q", testCommand, clipboardContent)
 	}
 }
 
@@ -112,5 +139,55 @@ func TestStateTransitions(t *testing.T) {
 				t.Errorf("Invalid state transition from %v to %v", tt.currentState, tt.expectedState)
 			}
 		})
+	}
+}
+
+func TestVerboseMode(t *testing.T) {
+	// Test verbose mode enabled
+	model := initialModel("test prompt", true)
+	if !model.verbose {
+		t.Error("Expected verbose to be true when enabled")
+	}
+
+	// Test verbose mode disabled
+	model = initialModel("test prompt", false)
+	if model.verbose {
+		t.Error("Expected verbose to be false when disabled")
+	}
+}
+
+func TestFullPromptStorage(t *testing.T) {
+	// Test that fullPrompt is stored when cmdGeneratedMsg is received
+	testModel := initialModel("test prompt", true)
+
+	// Simulate receiving a cmdGeneratedMsg
+	testFullPrompt := "System: Test system prompt\n\nUser: test prompt"
+	msg := cmdGeneratedMsg{
+		cmd:        "ls -la",
+		err:        nil,
+		fullPrompt: testFullPrompt,
+	}
+
+	// Update the model with the message
+	updatedModel, _ := testModel.Update(msg)
+
+	// Type assertion to access the fields
+	if m, ok := updatedModel.(model); ok {
+		// Check that the full prompt was stored
+		if m.fullPrompt != testFullPrompt {
+			t.Errorf("Expected fullPrompt to be %q, got %q", testFullPrompt, m.fullPrompt)
+		}
+
+		// Check that the generated command was stored
+		if m.generatedCmd != "ls -la" {
+			t.Errorf("Expected generatedCmd to be %q, got %q", "ls -la", m.generatedCmd)
+		}
+
+		// Check that state changed to result
+		if m.state != stateResult {
+			t.Errorf("Expected state to be stateResult, got %v", m.state)
+		}
+	} else {
+		t.Fatal("Expected updatedModel to be of type model")
 	}
 }

@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
+	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,14 +33,23 @@ type model struct {
 	spinner         spinner.Model
 	prompt          string
 	generatedCmd    string
+	copiedCmd       string // Track the command that was copied to clipboard
 	err             error
 	width           int
 	height          int
 	anthropicClient *anthropic.Client
+	verbose         bool   // Show full prompt in verbose mode
+	fullPrompt      string // Store the full prompt sent to AI
 }
 
 // Messages
 type cmdGeneratedMsg struct {
+	cmd        string
+	err        error
+	fullPrompt string // Include the full prompt that was sent to AI
+}
+
+type cmdCopiedMsg struct {
 	cmd string
 	err error
 }
@@ -71,9 +82,18 @@ var (
 			Foreground(lipgloss.Color("#DC2626")).
 			Bold(true).
 			MarginTop(1)
+
+	verbosePromptStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("#374151")).
+				Foreground(lipgloss.Color("#D1D5DB")).
+				Padding(1).
+				MarginTop(1).
+				MarginBottom(1).
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("#4B5563"))
 )
 
-func initialModel(initialPrompt string) model {
+func initialModel(initialPrompt string, verbose bool) model {
 	// Initialize textarea
 	ta := textarea.New()
 	ta.Placeholder = "Describe what you want to do..."
@@ -108,6 +128,7 @@ func initialModel(initialPrompt string) model {
 		spinner:         s,
 		prompt:          initialPrompt,
 		anthropicClient: &client,
+		verbose:         verbose,
 	}
 }
 
@@ -200,7 +221,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			m.generatedCmd = msg.cmd
+			m.fullPrompt = msg.fullPrompt
 		}
+
+	case cmdCopiedMsg:
+		if msg.err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Could not copy command to clipboard: %v\n", msg.err)
+		} else {
+			m.copiedCmd = msg.cmd
+		}
+		return m, tea.Quit
 
 	case spinner.TickMsg:
 		if m.state == stateLoading {
@@ -255,8 +285,17 @@ func (m model) View() string {
 			content.WriteString(promptStyle.Render("Generated command:"))
 			content.WriteString("\n")
 			content.WriteString(cmdStyle.Render(m.generatedCmd))
+
+			// Show verbose prompt if verbose mode is enabled
+			if m.verbose && m.fullPrompt != "" {
+				content.WriteString("\n")
+				content.WriteString(promptStyle.Render("Full prompt sent to AI:"))
+				content.WriteString("\n")
+				content.WriteString(verbosePromptStyle.Render(m.fullPrompt))
+			}
+
 			content.WriteString("\n")
-			content.WriteString(helpStyle.Render("Press Enter to execute • E to edit prompt • Any other key to cancel"))
+			content.WriteString(helpStyle.Render("Press Enter to copy to clipboard • E to edit prompt • Any other key to cancel"))
 		}
 
 	case stateEdit:
@@ -274,15 +313,23 @@ func (m model) generateCommand() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 
-		systemPrompt := `You are a helpful command-line assistant. Given a user's description of what they want to do, generate a single, safe command that accomplishes their goal. 
+		// Get environment information
+		envInfo := getEnvironmentInfo()
+
+		systemPrompt := fmt.Sprintf(`You are a helpful command-line assistant. Given a user's description of what they want to do, generate a single, safe command that accomplishes their goal.
+
+Environment Information:
+%s
 
 Rules:
 1. Return ONLY the command, no explanations or markdown
 2. Make sure the command is safe and won't cause harm
-3. Use common Unix/Linux commands when possible
+3. Use commands appropriate for the user's platform and shell
 4. If the request is unclear or potentially dangerous, suggest a safer alternative
 5. For file operations, use relative paths unless absolute paths are specifically requested
 6. Don't include commands that require sudo unless explicitly requested
+7. Consider the user's shell when generating commands (e.g., use appropriate syntax for bash, zsh, fish, etc.)
+8. Take advantage of available environment variables when relevant
 
 Examples:
 User: "list all files in current directory"
@@ -292,7 +339,10 @@ User: "find all .go files"
 Response: find . -name "*.go"
 
 User: "create a new directory called myproject"
-Response: mkdir myproject`
+Response: mkdir myproject`, envInfo)
+
+		// Create the full prompt that includes both system and user messages
+		fullPrompt := fmt.Sprintf("System: %s\n\nUser: %s", systemPrompt, m.prompt)
 
 		message, err := m.anthropicClient.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     anthropic.ModelClaudeSonnet4_20250514,
@@ -315,7 +365,7 @@ Response: mkdir myproject`
 		})
 
 		if err != nil {
-			return cmdGeneratedMsg{err: err}
+			return cmdGeneratedMsg{err: err, fullPrompt: fullPrompt}
 		}
 
 		// Extract the text from the response
@@ -329,15 +379,20 @@ Response: mkdir myproject`
 			}
 		}
 
-		return cmdGeneratedMsg{cmd: cmdText}
+		return cmdGeneratedMsg{cmd: cmdText, fullPrompt: fullPrompt}
 	}
 }
 
 func (m model) executeCommand() tea.Cmd {
-	return tea.ExecProcess(exec.Command("sh", "-c", m.generatedCmd), func(err error) tea.Msg {
-		// After command execution, quit the program
-		return tea.Quit()
-	})
+	return func() tea.Msg {
+		// Copy command to clipboard
+		if err := copyToClipboard(m.generatedCmd); err != nil {
+			return cmdCopiedMsg{cmd: "", err: err}
+		}
+
+		// Return success message with the copied command
+		return cmdCopiedMsg{cmd: m.generatedCmd, err: nil}
+	}
 }
 
 func min(a, b int) int {
@@ -347,21 +402,60 @@ func min(a, b int) int {
 	return b
 }
 
+// copyToClipboard copies the command to the clipboard
+func copyToClipboard(command string) error {
+	return clipboard.WriteAll(command)
+}
+
+// getEnvironmentInfo gathers environment information for the LLM prompt
+func getEnvironmentInfo() string {
+	var envInfo strings.Builder
+
+	// Get current shell
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "unknown"
+	}
+	envInfo.WriteString(fmt.Sprintf("Shell: %s\n", shell))
+
+	// Get platform and architecture
+	envInfo.WriteString(fmt.Sprintf("Platform: %s\n", runtime.GOOS))
+	envInfo.WriteString(fmt.Sprintf("Architecture: %s\n", runtime.GOARCH))
+
+	// Get environment variable keys (but not values for security)
+	envVars := os.Environ()
+	var envKeys []string
+	for _, env := range envVars {
+		if parts := strings.SplitN(env, "=", 2); len(parts) == 2 {
+			envKeys = append(envKeys, parts[0])
+		}
+	}
+
+	// Sort environment variable keys for consistent output
+	sort.Strings(envKeys)
+
+	envInfo.WriteString("Available environment variables: ")
+	envInfo.WriteString(strings.Join(envKeys, ", "))
+
+	return envInfo.String()
+}
+
 func main() {
 	// Handle help flags
 	if len(os.Args) > 1 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
 		fmt.Printf(`ClippyCLI - AI Command Generator
 
 Usage:
-  clippycli [prompt]
+  clippycli [options] [prompt]
 
 Examples:
   clippycli                           # Interactive mode
   clippycli "list all files"          # Quick mode with auto-generation
-  clippycli "find large files"        # Generate command for finding large files
+  clippycli -v "find large files"     # Verbose mode showing full AI prompt
 
 Options:
   -h, --help                          # Show this help message
+  -v                                  # Verbose mode: show full prompt sent to AI
 
 Environment Variables:
   ANTHROPIC_API_KEY                   # Required: Your Anthropic API key
@@ -378,20 +472,58 @@ For more information, visit: https://github.com/benmyles/cliclippy
 		os.Exit(1)
 	}
 
-	// Handle command-line arguments
+	// Parse command-line arguments
+	var verbose bool
 	var initialPrompt string
-	if len(os.Args) > 1 {
-		// Join all arguments after the program name as the initial prompt
-		initialPrompt = strings.Join(os.Args[1:], " ")
+	var promptArgs []string
+
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if arg == "-v" {
+			verbose = true
+		} else {
+			promptArgs = append(promptArgs, arg)
+		}
+	}
+
+	if len(promptArgs) > 0 {
+		initialPrompt = strings.Join(promptArgs, " ")
 	}
 
 	p := tea.NewProgram(
-		initialModel(initialPrompt),
+		initialModel(initialPrompt, verbose),
 		tea.WithAltScreen(),
 	)
 
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error running program: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Show the actual command that was copied to clipboard with styling
+	if m, ok := finalModel.(model); ok && m.copiedCmd != "" {
+		// Print styled success message
+		successHeader := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#059669")).
+			Render("✓ Command copied to clipboard:")
+
+		commandDisplay := lipgloss.NewStyle().
+			Background(lipgloss.Color("#1F2937")).
+			Foreground(lipgloss.Color("#F9FAFB")).
+			Padding(0, 1).
+			MarginTop(1).
+			MarginBottom(1).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#6B7280")).
+			Render(m.copiedCmd)
+
+		helpText := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6B7280")).
+			Italic(true).
+			Render("Paste with Ctrl+V (or Cmd+V on macOS)")
+
+		fmt.Printf("\n%s\n%s\n%s\n\n", successHeader, commandDisplay, helpText)
 	}
 }
