@@ -22,15 +22,15 @@ A Go CLI utility that uses the Anthropic Claude API to generate shell commands b
 ### Build from Source
 
 ```bash
-git clone https://github.com/benmyles/cliclippy.git
-cd cliclippy
+git clone https://github.com/benmyles/clippycli.git
+cd clippycli
 go build -o clippycli
 ```
 
 ### Install Globally
 
 ```bash
-go install github.com/benmyles/cliclippy@latest
+go install github.com/benmyles/clippycli@latest
 ```
 
 ## Configuration
@@ -332,7 +332,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 If you encounter any issues or have questions:
 
-1. Check the [Issues](https://github.com/benmyles/cliclippy/issues) page
+1. Check the [Issues](https://github.com/benmyles/clippycli/issues) page
 2. Create a new issue with detailed information about your problem
 3. Include your Go version, OS, and any error messages
 
