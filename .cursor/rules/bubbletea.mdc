@@ -1,0 +1,1012 @@
+---
+description: Documentation for the Go bubbletea, bubbles and lipgloss libraries.
+globs: 
+alwaysApply: false
+---
+# The Ultimate Guide to Building Terminal Apps with Go: Bubble Tea, Bubbles & Lip Gloss
+
+Welcome to the world of rich, interactive terminal applications with Go! This guide will walk you through using three powerful libraries from Charm:
+
+1.  **Bubble Tea**: A functional, Elm-inspired framework for building stateful terminal applications.
+2.  **Bubbles**: A collection of common, ready-to-use UI components (bubbles) for Bubble Tea.
+3.  **Lip Gloss**: A library for fluent, declarative, and elegant terminal styling and layout.
+
+By the end of this guide, you'll have a solid understanding of how to combine these tools to create compelling TUIs.
+
+## Table of Contents
+
+1.  [Introduction to Bubble Tea](#1-introduction-to-bubble-tea)
+    *   [The Elm Architecture (TEA) in Go](#the-elm-architecture-tea-in-go)
+    *   [Core Concepts: Model, Init, Update, View](#core-concepts-model-init-update-view)
+    *   [Messages (Msg) and Commands (Cmd)](#messages-msg-and-commands-cmd)
+2.  [Setting Up Your First Bubble Tea App](#2-setting-up-your-first-bubble-tea-app)
+    *   [Installation](#installation)
+    *   [A Simple Example](#a-simple-example)
+3.  [Handling User Input](#3-handling-user-input)
+    *   [Key Presses (KeyMsg)](#key-presses-keymsg)
+    *   [Mouse Events (MouseMsg)](#mouse-events-mousemsg)
+    *   [Window Size Events (WindowSizeMsg)](#window-size-events-windowsizemsg)
+    *   [Focus and Blur Events](#focus-and-blur-events)
+4.  [Managing State with the Model](#4-managing-state-with-the-model)
+5.  [Performing I/O with Commands](#5-performing-io-with-commands)
+    *   [Built-in Commands (Tick, Batch, Sequence, Quit)](#built-in-commands-tick-batch-sequence-quit)
+    *   [Custom Commands](#custom-commands)
+    *   [Executing External Processes (`ExecProcess`)](#executing-external-processes-execprocess)
+6.  [Styling with Lip Gloss](#6-styling-with-lip-gloss)
+    *   [Creating and Applying Styles](#creating-and-applying-styles)
+    *   [Colors (ANSI, 256, TrueColor, Adaptive)](#colors-ansi-256-truecolor-adaptive)
+    *   [Text Formatting (Bold, Italic, Underline)](#text-formatting-bold-italic-underline)
+    *   [Block-Level Styling (Padding, Margins, Borders)](#block-level-styling-padding-margins-borders)
+    *   [Alignment and Dimensions (Width, Height, Align)](#alignment-and-dimensions-width-height-align)
+    *   [Layout Utilities (JoinHorizontal, JoinVertical, Place)](#layout-utilities-joinhorizontal-joinvertical-place)
+    *   [Rendering Static Tables, Lists, and Trees](#rendering-static-tables-lists-and-trees)
+    *   [Custom Renderers](#custom-renderers)
+7.  [Using Bubbles: Pre-built Components](#7-using-bubbles-pre-built-components)
+    *   [Spinner](#spinner)
+    *   [TextInput](#textinput)
+    *   [TextArea](#textarea)
+    *   [List](#list)
+    *   [Table (Interactive)](#table-interactive)
+    *   [Viewport](#viewport)
+    *   [Paginator](#paginator)
+    *   [Progress](#progress)
+    *   [Help](#help)
+    *   [Key (Key Bindings Management)](#key-key-bindings-management)
+    *   [FilePicker](#filepicker)
+    *   [Timer & Stopwatch](#timer--stopwatch)
+    *   [Cursor](#cursor)
+8.  [Advanced Bubble Tea Techniques](#8-advanced-bubble-tea-techniques)
+    *   [Alternate Screen Buffer](#alternate-screen-buffer)
+    *   [Sending Messages from Outside (`Program.Send`)](#sending-messages-from-outside-programsend)
+    *   [Printing Above the TUI (`tea.Println`)](#printing-above-the-tui-teaprintln)
+    *   [Program Options (`With...`)](#program-options-with)
+    *   [Suspending and Resuming](#suspending-and-resuming)
+9.  [Debugging Your Application](#9-debugging-your-application)
+10. [Project Structure and Best Practices](#10-project-structure-and-best-practices)
+    *   [Organizing Code](#organizing-code)
+    *   [Managing Dependencies](#managing-dependencies)
+    *   [CI/CD Setup (Overview from `.github` files)](#cicd-setup-overview-from-github-files)
+11. [Conclusion and Further Resources](#11-conclusion-and-further-resources)
+
+---
+
+## 1. Introduction to Bubble Tea
+
+Bubble Tea is a Go framework based on [The Elm Architecture (TEA)](https://guide.elm-lang.org/architecture/). It provides a stateful, functional way to build interactive terminal applications.
+
+### The Elm Architecture (TEA) in Go
+
+TEA is a pattern for building interactive applications. It consists of three main parts:
+*   **Model**: The state of your application.
+*   **Update**: A way to update your state based on messages.
+*   **View**: A way to display your state as a UI.
+
+Bubble Tea adapts this pattern for Go, making it suitable for terminal environments.
+
+### Core Concepts: Model, Init, Update, View
+
+A Bubble Tea program is built around a `Model` type that satisfies the `tea.Model` interface:
+
+```go
+package tea
+
+type Model interface {
+    Init() Cmd
+    Update(Msg) (Model, Cmd)
+    View() string
+}
+```
+
+*   **`Model`**: This is typically a `struct` that holds all the data representing the current state of your application.
+*   **`Init() Cmd`**: Called once when the program starts. It's used to set the initial state and can return an initial `Cmd` to perform some I/O (like loading data or starting a timer). If no initial I/O is needed, return `nil`.
+*   **`Update(Msg) (Model, Cmd)`**: This function is the heart of your application's logic. It's called whenever a `Msg` (message) occurs (e.g., a key press, a timer tick, data from an HTTP request). Its job is to:
+    1.  Inspect the incoming `Msg`.
+    2.  Update the `Model` based on the message.
+    3.  Optionally, return a new `Cmd` to perform further I/O.
+    The `Model` returned from `Update` becomes the new state of the application.
+*   **`View() string`**: This function takes the current `Model` and returns a `string` representing the UI. Bubble Tea handles rendering this string to the terminal efficiently. You don't need to worry about redrawing logic; just describe what the UI should look like based on the current state.
+
+### Messages (Msg) and Commands (Cmd)
+
+*   **`tea.Msg`**: An interface type (`interface{}`) representing an event that has occurred. Messages can be anything: a key press (`tea.KeyMsg`), a mouse event (`tea.MouseMsg`), a timer tick (`timer.TickMsg`), data fetched from an API, or a custom event you define. Messages are processed by the `Update` function.
+
+*   **`tea.Cmd`**: A function assinatura `func() tea.Msg`. Commands are used to perform I/O operations that might take time, such as:
+    *   Making HTTP requests.
+    *   Reading/writing files.
+    *   Waiting for a timer.
+    *   Executing external processes.
+    Commands run asynchronously in goroutines. When a command completes, it returns a `Msg` that is then fed back into the `Update` function. If a command doesn't need to produce a message upon completion (e.g., just writing to a file), it can return `nil`.
+
+---
+
+## 2. Setting Up Your First Bubble Tea App
+
+### Installation
+
+To use Bubble Tea and its companion libraries, you'll need Go installed (preferably a recent version).
+
+```bash
+go get github.com/charmbracelet/bubbletea
+go get github.com/charmbracelet/bubbles
+go get github.com/charmbracelet/lipgloss
+```
+
+### A Simple Example
+
+Let's create a basic "Hello, World" equivalent that quits when you press 'q'.
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// 1. Define your model
+type model struct {
+	message string
+}
+
+// initialModel returns the first state of our application.
+func initialModel() model {
+	return model{
+		message: "Hello, Bubble Tea!",
+	}
+}
+
+// 2. Define Init: runs once when the program starts
+func (m model) Init() tea.Cmd {
+	return nil // No initial command
+}
+
+// 3. Define Update: handles messages and updates the model
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		// If the user pressed q or ctrl+c, quit the program
+		if msg.String() == "q" || msg.String() == "ctrl+c" {
+			return m, tea.Quit // tea.Quit is a special command to exit
+		}
+	}
+	return m, nil // No command to run
+}
+
+// 4. Define View: renders the UI based on the model
+func (m model) View() string {
+	return fmt.Sprintf("%s\n\nPress 'q' to quit.\n", m.message)
+}
+
+func main() {
+	// Create a new Bubble Tea program
+	p := tea.NewProgram(initialModel())
+
+	// Run the program
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running program: %v\n", err)
+		os.Exit(1)
+	}
+}
+```
+
+Save this as `main.go`, then run `go mod init myapp && go mod tidy && go run main.go`.
+
+---
+
+## 3. Handling User Input
+
+Bubble Tea translates terminal input events into messages that your `Update` function can process.
+
+### Key Presses (KeyMsg)
+
+When a key is pressed, Bubble Tea sends a `tea.KeyMsg` to your `Update` function.
+
+```go
+type KeyMsg tea.Key // KeyMsg is an alias for tea.Key
+
+type Key struct {
+    Type  KeyType // e.g., KeyEnter, KeyEsc, KeyRunes
+    Runes []rune  // The actual runes entered (for KeyRunes type)
+    Alt   bool    // Was the Alt key pressed?
+    Paste bool    // Was this input from a paste operation?
+}
+```
+
+You can check the key type or its string representation:
+
+```go
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        // Using String() for simple comparisons
+        switch msg.String() {
+        case "q", "ctrl+c", "esc":
+            return m, tea.Quit
+        case "enter":
+            m.action = "Enter pressed"
+            return m, nil
+        case "up", "k":
+            m.action = "Up arrow or k"
+            return m, nil
+        }
+
+        // For more specific checks or rune input
+        switch msg.Type {
+        case tea.KeyRunes:
+            // Handle character input, e.g., for a text field
+            m.userInput += string(msg.Runes)
+        case tea.KeySpace:
+            m.action = "Space bar"
+        // ... other tea.KeyType cases
+        }
+    }
+    return m, nil
+}
+```
+The `bubbles/key` package provides a more robust way to manage keybindings, especially for components (covered later).
+
+### Mouse Events (MouseMsg)
+
+To receive mouse events, you first need to enable them when starting your program:
+*   `tea.WithMouseCellMotion()`: For clicks, releases, wheel, and drag events.
+*   `tea.WithMouseAllMotion()`: For all the above, plus mouse movement even when no button is pressed (hover).
+
+Alternatively, you can send `tea.EnableMouseCellMotion()` or `tea.EnableMouseAllMotion()` as commands after the program has started.
+
+Mouse events are delivered as `tea.MouseMsg`:
+```go
+type MouseMsg tea.MouseEvent
+
+type MouseEvent struct {
+    X, Y   int
+    Shift  bool
+    Alt    bool
+    Ctrl   bool
+    Action MouseAction // Press, Release, Motion
+    Button MouseButton // Left, Middle, Right, WheelUp, WheelDown, etc.
+    // Type MouseEventType (deprecated, use Action & Button)
+}
+```
+Handle them in your `Update` function:
+```go
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.MouseMsg:
+        m.lastMouseEvent = fmt.Sprintf("Mouse event: %s at (%d, %d)", msg.String(), msg.X, msg.Y)
+        if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+            m.action = "Left click!"
+        }
+        return m, nil
+    // ...
+    }
+    return m, nil
+}
+```
+
+### Window Size Events (WindowSizeMsg)
+
+When the terminal window is resized (or initially when the program starts), a `tea.WindowSizeMsg` is sent:
+
+```go
+type WindowSizeMsg struct {
+    Width  int
+    Height int
+}
+```
+Use this to make your UI responsive:
+```go
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.WindowSizeMsg:
+        m.width = msg.Width
+        m.height = msg.Height
+        // You might re-layout UI elements here
+        return m, nil
+    // ...
+    }
+    return m, nil
+}
+```
+
+### Focus and Blur Events
+
+If your terminal supports it and you've enabled focus reporting with `tea.WithReportFocus()` or `tea.EnableReportFocus()`, you'll receive `tea.FocusMsg` and `tea.BlurMsg` when the terminal window gains or loses focus.
+
+```go
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg.(type) {
+    case tea.FocusMsg:
+        m.isFocused = true
+    case tea.BlurMsg:
+        m.isFocused = false
+    // ...
+    }
+    return m, nil
+}
+```
+
+---
+
+## 4. Managing State with the Model
+
+The `Model` is central to your application. It should hold all the data necessary to render your UI and make decisions in your `Update` function.
+
+*   **Keep it pure**: Strive to make your `Model` a plain data structure (usually a struct). Avoid putting channels or complex dependencies directly in it if possible.
+*   **Return new models**: Your `Update` function should return a *new* instance of the model (or a modified copy) rather than mutating the existing model in place, especially if your model is a pointer type. This aligns with functional principles and can prevent subtle bugs.
+
+```go
+type appState struct {
+    counter int
+    loading bool
+    data    []string
+    err     error
+}
+
+func (m appState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    // Example: copy the model before modifying
+    // newModel := m // if appState is a struct (value type)
+    // For pointer types, you might need a deeper copy or careful mutation.
+
+    switch msg := msg.(type) {
+    case someIncrementMsg:
+        m.counter++ // if m is a value type, this modifies a copy.
+                    // The caller (Bubble Tea runtime) gets this modified copy.
+        return m, nil
+    // ...
+    }
+    return m, nil
+}
+```
+
+---
+
+## 5. Performing I/O with Commands
+
+Commands (`tea.Cmd`) are how Bubble Tea applications interact with the outside world (network, disk, timers, etc.) without blocking the UI.
+
+### Built-in Commands
+
+Bubble Tea provides several useful built-in commands:
+
+*   **`tea.Quit()`**: A `Cmd` that returns a `tea.QuitMsg`, telling the program to exit.
+*   **`tea.Interrupt()`**: Returns `tea.InterruptMsg`. Useful for `ctrl+c` behavior when you might want to clean up or confirm before quitting.
+*   **`tea.Suspend()`**: Returns `tea.SuspendMsg`. Useful for `ctrl+z` behavior.
+*   **`tea.Batch(cmds ...Cmd)`**: Runs multiple commands concurrently. The resulting messages arrive in `Update` as they complete, in no particular order.
+    ```go
+    return tea.Batch(fetchUserDataCmd, fetchSettingsCmd)
+    ```
+*   **`tea.Sequence(cmds ...Cmd)`**: Runs multiple commands one after another, sequentially.
+    ```go
+    return tea.Sequence(authenticateUserCmd, loadDataCmd)
+    ```
+*   **`tea.Tick(duration, func(time.Time) Msg)`**: Sends a message after a specified `duration`. Ideal for one-off delays or periodic updates (by returning another `Tick` command in `Update`).
+    ```go
+    // In Init or Update
+    return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+        return MyTickMsg{Time: t}
+    })
+    ```
+*   **`tea.Every(duration, func(time.Time) Msg)`**: Similar to `Tick`, but attempts to synchronize with the system clock for more regular intervals (e.g., every minute on the minute).
+*   **`tea.SetWindowTitle(string)`**: Sets the terminal window title.
+*   **`tea.WindowSize()`**: Manually queries for the current window size, resulting in a `WindowSizeMsg`. Usually not needed as Bubble Tea sends this automatically.
+*   **Screen Manipulation**: `EnterAltScreen`, `ExitAltScreen`, `ClearScreen`.
+*   **Mouse Control**: `EnableMouseCellMotion`, `EnableMouseAllMotion`, `DisableMouse`.
+*   **Cursor Control**: `ShowCursor`, `HideCursor`.
+*   **Paste Control**: `EnableBracketedPaste`, `DisableBracketedPaste`.
+*   **Focus Reporting**: `EnableReportFocus`, `DisableReportFocus`.
+
+### Custom Commands
+
+Any function that matches the `func() tea.Msg` signature can be a command.
+
+```go
+type dataFetchedMsg struct {
+    data string
+    err  error
+}
+
+func fetchDataCmd() tea.Msg {
+    // Simulate an API call
+    time.Sleep(500 * time.Millisecond)
+    if time.Now().Second()%2 == 0 {
+        return dataFetchedMsg{data: "Here's your data!", err: nil}
+    }
+    return dataFetchedMsg{data: "", err: errors.New("failed to fetch")}
+}
+
+// In Update:
+// case someTriggerMsg:
+//     return m, fetchDataCmd
+//
+// case dataFetchedMsg:
+//     if msg.err != nil { /* handle error */ }
+//     m.data = msg.data
+//     return m, nil
+```
+
+If your command needs arguments, use a closure:
+```go
+func fetchDataForUserCmd(userID string) tea.Cmd {
+    return func() tea.Msg {
+        // ... fetch data for userID ...
+        return dataFetchedMsg{ /* ... */ }
+    }
+}
+```
+
+### Executing External Processes (`ExecProcess`)
+
+For running external, potentially interactive commands (like launching an editor), use `tea.ExecProcess`:
+
+```go
+import "os/exec"
+
+type editorFinishedMsg struct{ err error }
+
+func openEditorCmd(filename string) tea.Cmd {
+    editor := os.Getenv("EDITOR")
+    if editor == "" {
+        editor = "vim" // or "nano", "code --wait", etc.
+    }
+    c := exec.Command(editor, filename)
+    return tea.ExecProcess(c, func(err error) tea.Msg {
+        // This callback runs after the command finishes
+        return editorFinishedMsg{err: err}
+    })
+}
+
+// In Update:
+// case openEditorTriggerMsg:
+//     return m, openEditorCmd("myfile.txt")
+//
+// case editorFinishedMsg:
+//     if msg.err != nil { /* handle error */ }
+//     // Editor closed, maybe refresh content
+//     return m, nil
+```
+Bubble Tea will pause rendering and restore the terminal for the external command, then resume when it exits.
+
+---
+
+## 6. Styling with Lip Gloss
+
+Lip Gloss is your go-to library for styling terminal output. It's declarative and inspired by CSS.
+
+### Creating and Applying Styles
+
+```go
+import "github.com/charmbracelet/lipgloss"
+
+var myStyle = lipgloss.NewStyle().
+    Bold(true).
+    Foreground(lipgloss.Color("#FF00FF")) // Magenta
+
+// In View:
+func (m model) View() string {
+    return myStyle.Render("This is styled text!")
+}
+```
+Styles are immutable; methods like `Bold(true)` return a *new* style.
+
+### Colors (ANSI, 256, TrueColor, Adaptive)
+
+Lip Gloss supports various color profiles and will automatically degrade colors gracefully if the terminal doesn't support a specific profile.
+
+*   **ANSI 16 (4-bit)**: `lipgloss.Color("5")` (magenta)
+*   **ANSI 256 (8-bit)**: `lipgloss.Color("201")` (hot pink)
+*   **TrueColor (24-bit)**: `lipgloss.Color("#FAFAFA")` (CSS hex)
+*   **AdaptiveColor**: Specify different colors for light and dark terminal backgrounds.
+    ```go
+    adaptiveFg := lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}
+    style := lipgloss.NewStyle().Foreground(adaptiveFg)
+    ```
+*   **CompleteColor**: Specify exact values for each profile if you want to bypass automatic degradation.
+    ```go
+    cc := lipgloss.CompleteColor{TrueColor: "#FF5F87", ANSI256: "204", ANSI: "1"}
+    ```
+*   **CompleteAdaptiveColor**: Combines `CompleteColor` and `AdaptiveColor`.
+
+### Text Formatting (Bold, Italic, Underline)
+
+```go
+style := lipgloss.NewStyle().
+    Bold(true).
+    Italic(true).
+    Underline(true).
+    Strikethrough(true).
+    Reverse(true). // Swaps foreground and background
+    Blink(true).
+    Faint(true)
+```
+
+### Block-Level Styling (Padding, Margins, Borders)
+
+Control spacing and borders around your text blocks.
+
+*   **Padding**: Space *inside* the style's content area.
+    ```go
+    style.Padding(1)                      // 1 cell on all sides
+    style.Padding(1, 2)                   // Vertical 1, Horizontal 2
+    style.Padding(1, 2, 3)                // Top 1, Horizontal 2, Bottom 3
+    style.Padding(1, 2, 3, 4)             // Top 1, Right 2, Bottom 3, Left 4
+    style.PaddingLeft(2).PaddingTop(1)    // Specific sides
+    ```
+
+*   **Margins**: Space *outside* the style's border. Same syntax as padding.
+    ```go
+    style.Margin(1)
+    style.MarginLeft(2)
+    ```
+
+*   **Borders**:
+    ```go
+    style.Border(lipgloss.NormalBorder(), true) // Normal border on all sides
+    style.BorderStyle(lipgloss.RoundedBorder()).
+        BorderForeground(lipgloss.Color("63")). // Purple
+        BorderTop(true).BorderLeft(true)        // Only top and left
+
+    // Custom border
+    myBorder := lipgloss.Border{
+        Top: "─", Bottom: "─", Left: "│", Right: "│",
+        TopLeft: "╭", TopRight: "╮", BottomLeft: "╰", BottomRight: "╯",
+    }
+    style.Border(myBorder, true)
+    ```
+    Predefined borders: `NormalBorder`, `RoundedBorder`, `ThickBorder`, `DoubleBorder`, `HiddenBorder`, `BlockBorder`, `MarkdownBorder`, `ASCIIBorder`.
+
+### Alignment and Dimensions (Width, Height, Align)
+
+*   **Width/Height**: Set fixed dimensions. Text will wrap within the width.
+    ```go
+    style.Width(20).Height(5)
+    ```
+*   **Align**: Horizontal text alignment within the `Width`.
+    ```go
+    style.Width(30).Align(lipgloss.Center) // or Left, Right
+    ```
+    Vertical alignment applies if `Height` is set and content is shorter.
+    ```go
+    style.Height(10).AlignVertical(lipgloss.Center) // or Top, Bottom
+    ```
+    `style.Align(horizontalPos, verticalPos)` is also available.
+
+### Layout Utilities (JoinHorizontal, JoinVertical, Place)
+
+*   **`lipgloss.JoinHorizontal(position, str1, str2, ...)`**: Joins strings horizontally. `position` (e.g., `lipgloss.Top`, `lipgloss.Center`, `0.5`) determines vertical alignment of the blocks.
+*   **`lipgloss.JoinVertical(position, str1, str2, ...)`**: Joins strings vertically. `position` (e.g., `lipgloss.Left`, `lipgloss.Center`, `0.5`) determines horizontal alignment.
+*   **`lipgloss.Place(width, height, hPos, vPos, str)`**: Places `str` within a box of `width`x`height` at the specified horizontal and vertical positions. `PlaceHorizontal` and `PlaceVertical` are also available.
+
+### Rendering Static Tables, Lists, and Trees
+
+Lip Gloss provides sub-packages for rendering static, styled data structures:
+
+*   **`lipgloss/table`**: For simple, non-interactive tables.
+    ```go
+    import "github.com/charmbracelet/lipgloss/table"
+    // ...
+    t := table.New().
+        Headers("NAME", "TYPE").
+        Rows(
+            []string{"Bulbasaur", "Grass"},
+            []string{"Charmander", "Fire"},
+        ).
+        BorderStyle(lipgloss.NormalBorder()).
+        StyleFunc(func(row, col int) lipgloss.Style { /* ... */ })
+    fmt.Println(t.Render())
+    ```
+
+*   **`lipgloss/list`**: For simple, non-interactive bulleted or numbered lists. Supports nesting.
+    ```go
+    import "github.com/charmbracelet/lipgloss/list"
+    // ...
+    l := list.New(
+        "Apples",
+        "Bananas",
+        list.New("Red Grapes", "Green Grapes").Enumerator(list.Roman),
+    ).Enumerator(list.Arabic)
+    fmt.Println(l)
+    ```
+
+*   **`lipgloss/tree`**: For rendering tree-like structures.
+    ```go
+    import "github.com/charmbracelet/lipgloss/tree"
+    // ...
+    tr := tree.New().
+        Root("Project").
+        Child("src", tree.New().Child("main.go", "utils.go")).
+        Child("docs", "README.md")
+    fmt.Println(tr)
+    ```
+
+These are excellent for displaying data but are not interactive components like those found in the `bubbles` package.
+
+### Custom Renderers
+
+By default, Lip Gloss uses a global renderer associated with `os.Stdout`. For scenarios like SSH servers where each client might have different terminal capabilities (color profile, dark/light background), you should create a `lipgloss.Renderer` per client.
+
+```go
+// import "github.com/muesli/termenv" (needed for termenv.NewOutput)
+
+// For an SSH session `sess`:
+// output := termenv.NewOutput(sess, termenv.WithColorCache(true)) // or a more complex setup like in the lipgloss SSH example
+// renderer := lipgloss.NewRenderer(sess) // sess needs to implement io.Writer
+// renderer.SetOutput(output) // If you constructed termenv.Output manually
+
+// style := renderer.NewStyle().Foreground(lipgloss.AdaptiveColor{...})
+// sess.Write([]byte(style.Render("Hello client!")))
+```
+The Lip Gloss SSH example (`examples/ssh`) shows a more complete setup using `wish`.
+
+---
+
+## 7. Using Bubbles: Pre-built Components
+
+The `bubbles` package provides a suite of common UI components (often called "bubbles") that integrate seamlessly with Bubble Tea. Each bubble is essentially a `tea.Model` itself.
+
+**General Pattern for Using a Bubble:**
+1.  Add the bubble's model to your main model.
+2.  Initialize the bubble in your `Init` or when needed, often getting a `Cmd`.
+3.  Pass messages to the bubble's `Update` method from your main `Update`, and incorporate its returned `Model` and `Cmd`.
+4.  Call the bubble's `View()` method in your main `View()`.
+
+```go
+// Example structure with a textinput bubble
+import (
+    "github.com/charmbracelet/bubbles/textinput"
+    tea "github.com/charmbracelet/bubbletea"
+)
+
+type mainModel struct {
+    textInput textinput.Model
+    // ... other state
+}
+
+func newMainModel() mainModel {
+    ti := textinput.New()
+    ti.Placeholder = "Enter something..."
+    ti.Focus() // Important to allow typing
+    // ... other ti configurations ...
+    return mainModel{textInput: ti}
+}
+
+func (m mainModel) Init() tea.Cmd {
+    return textinput.Blink // Command from the textinput bubble
+}
+
+func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    var cmd tea.Cmd
+    // ... your main model's update logic ...
+
+    // Pass messages to the textinput
+    m.textInput, cmd = m.textInput.Update(msg)
+    return m, cmd // Or tea.Batch(yourCmd, cmd)
+}
+
+func (m mainModel) View() string {
+    return "Your input: " + m.textInput.View() + "\n..."
+}
+```
+
+Let's look at some key bubbles:
+
+### Spinner
+
+Indicates loading or activity.
+*   **Create**: `spinner.New()`
+*   **Configure**: `s.Spinner = spinner.Dot` (various types like `Line`, `Pulse`, `Moon`), `s.Style = lipglossStyle`.
+*   **Start**: Its `Init()` or `Update()` can return `s.Tick` command to start/continue animation.
+*   **Update**: `m.spinner, cmd = m.spinner.Update(msg)`
+*   **View**: `m.spinner.View()`
+
+### TextInput
+
+Single-line text input.
+*   **Create**: `textinput.New()`
+*   **Configure**:
+    *   `ti.Placeholder = "..."`
+    *   `ti.Prompt = "> "`
+    *   `ti.Focus()`: Essential for receiving input. `ti.Blur()` to unfocus.
+    *   `ti.CharLimit = 32`
+    *   `ti.Width = 20`
+    *   `ti.EchoMode = textinput.EchoPassword` (with `ti.EchoCharacter = '*'`) or `EchoNone`.
+    *   Styling: `ti.PromptStyle`, `ti.TextStyle`, `ti.PlaceholderStyle`.
+    *   `ti.Cursor`: A `cursor.Model` for detailed cursor control.
+    *   `ti.KeyMap`: Customizable keybindings.
+    *   `ti.SetValue(string)` and `ti.Value() string`.
+    *   `ti.Validate = func(string) error`: For input validation.
+    *   `ti.ShowSuggestions = true`, `ti.SetSuggestions([]string{"one", "two"})`.
+*   **Start**: Returns `textinput.Blink` command from `Init` or `Focus`.
+*   **Update/View**: Standard pattern.
+
+### TextArea
+
+Multi-line text input.
+*   **Create**: `textarea.New()`
+*   **Configure**: Similar to `TextInput` but for multi-line.
+    *   `ta.SetWidth(w)`, `ta.SetHeight(h)`.
+    *   `ta.ShowLineNumbers = true`.
+    *   `ta.Placeholder = "..."`.
+    *   `ta.FocusedStyle`, `ta.BlurredStyle` for different states.
+    *   `ta.Wrap = true` (default) / `false`.
+*   **Start**: `textarea.Blink`.
+*   **Update/View**: Standard pattern. Uses `runeutil` internally for input sanitization and `memoization` for efficient rendering of wrapped lines.
+
+### List
+
+Interactive, scrollable list of items.
+*   **Create**: `list.New(items []list.Item, delegate list.ItemDelegate, width, height int)`
+*   **`list.Item` interface**: Your list items must implement `FilterValue() string`. `list.DefaultItem` also needs `Title()` and `Description()`.
+*   **`list.ItemDelegate`**: Handles rendering and updating individual items. `list.NewDefaultDelegate()` is common.
+    *   You can customize `delegate.Styles` or implement your own `ItemDelegate`.
+    *   `delegate.UpdateFunc`, `ShortHelpFunc`, `FullHelpFunc` for custom behavior.
+*   **Configure**:
+    *   `l.Title = "..."`
+    *   `l.SetShowStatusBar(bool)`, `l.SetShowPagination(bool)`, `l.SetFilteringEnabled(bool)`.
+    *   `l.KeyMap`, `l.Styles`.
+    *   `l.Filter = customFilterFunc` (default uses `sahilm/fuzzy`).
+*   **Update/View**: Standard pattern. Provides methods like `SelectedItem()`, `Index()`, `CursorUp/Down()`.
+
+### Table (Interactive)
+
+Component for displaying and navigating tabular data (distinct from `lipgloss/table`).
+*   **Create**: `table.New(opts ...table.Option)`
+    *   `table.WithColumns([]table.Column{{Title: "Name", Width: 10}, ...})`
+    *   `table.WithRows([][]string{{"Val1", "Val2"}, ...})`
+    *   `table.WithHeight(h)`, `table.WithWidth(w)`, `table.WithFocused(bool)`.
+*   **Configure**:
+    *   `m.SetStyles(table.Styles{...})`. Default styles are `table.DefaultStyles()`.
+    *   `m.KeyMap`: For navigation (Up, Down, PageUp/Down, etc.).
+*   **Update/View**: Standard pattern. Methods like `SelectedRow()`, `Cursor()`, `MoveUp/Down()`.
+
+### Viewport
+
+For displaying and scrolling through large blocks of text content.
+*   **Create**: `viewport.New(width, height)`
+*   **Configure**:
+    *   `vp.SetContent("very long string...")`.
+    *   `vp.YPosition`: Important for high-performance rendering (though HPR is deprecated).
+    *   `vp.Style`: For borders, padding.
+    *   `vp.MouseWheelEnabled = true`, `vp.MouseWheelDelta = 3`.
+    *   `vp.KeyMap`.
+    *   `vp.SetHorizontalStep(n)` for horizontal scrolling amount.
+*   **Update/View**: Standard pattern. Provides `ScrollUp/Down()`, `PageUp/Down()`, `AtTop()`, `AtBottom()`, `ScrollPercent()`.
+
+### Paginator
+
+Manages pagination logic and can render pagination UI (dots or numbers).
+*   **Create**: `paginator.New()`
+*   **Configure**:
+    *   `p.Type = paginator.Dots` (or `paginator.Arabic`).
+    *   `p.PerPage = 10`.
+    *   `p.SetTotalPages(itemCount)`.
+    *   `p.ActiveDot`, `p.InactiveDot` (styled strings).
+    *   `p.KeyMap`.
+*   **Update/View**: Standard pattern. `p.GetSliceBounds(totalItems)` is very useful.
+
+### Progress
+
+Displays a progress bar, can be animated or static.
+*   **Create**: `progress.New(opts ...progress.Option)`
+    *   `progress.WithDefaultGradient()`, `progress.WithGradient(colorA, colorB)`, `progress.WithSolidFill(color)`.
+    *   `progress.WithoutPercentage()`.
+    *   `progress.WithWidth(w)`.
+*   **Animated**: Call `m.progress.IncrPercent(0.1)` or `m.progress.SetPercent(0.5)`. These return a `Cmd`. Your `Update` must handle `progress.FrameMsg` to update the animation.
+*   **Static**: In `View`, call `m.progress.ViewAs(currentPercentFloat)`.
+*   **Update**: For animated progress, `m.progress, cmd = m.progress.Update(msg)`.
+
+### Help
+
+Auto-generates a help view from keybindings.
+*   **Create**: `help.New()`
+*   **Configure**: `h.Width = termWidth`, `h.ShowAll = true` (for full help).
+*   **Usage**: Your main model's `KeyMap` (or any type satisfying `help.KeyMap` interface) needs `ShortHelp() []key.Binding` and `FullHelp() [][]key.Binding` methods.
+*   **View**: `m.help.View(m.mainKeyMap)`
+
+### Key (Key Bindings Management)
+
+A non-visual component for managing keybindings and generating help text.
+*   **`key.Binding`**: Represents a keybinding.
+    *   `key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("↑/k", "move up"))`
+    *   Can be enabled/disabled: `kb.SetEnabled(false)`. Disabled keys don't show in help.
+*   **`key.Matches(tea.KeyMsg, key.Binding)`**: Checks if a key press matches a binding.
+*   Often used within component `KeyMap` structs which then implement `help.KeyMap`.
+
+```go
+// Example KeyMap for a component
+type MyComponentKeyMap struct {
+    Up   key.Binding
+    Down key.Binding
+}
+
+var DefaultMyComponentKeyMap = MyComponentKeyMap{
+    Up:   key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "move up")),
+    Down: key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "move down")),
+}
+
+// Update usage
+// case key.Matches(msg, m.componentKeyMap.Up):
+//     // ...
+```
+
+### FilePicker
+
+A component for navigating the file system and selecting files.
+*   **Create**: `filepicker.New()`
+*   **Configure**:
+    *   `fp.CurrentDirectory = "/path/to/start"`
+    *   `fp.AllowedTypes = []string{".txt", ".md"}` (filters extensions)
+    *   `fp.DirAllowed = false`, `fp.FileAllowed = true`
+    *   `fp.ShowHidden = false`
+    *   `fp.Height`, `fp.Styles`, `fp.KeyMap`.
+*   **Start**: `fp.Init()` returns a `Cmd` to read the initial directory.
+*   **Update/View**: Standard pattern.
+*   **Result**: `fp.DidSelectFile(msg)` returns `(bool, string)` for the selected path. `fp.DidSelectDisabledFile(msg)` for attempts on disabled files.
+*   Handles platform-specific hidden file logic (Unix `.` prefix, Windows file attributes).
+
+### Timer & Stopwatch
+
+*   **Timer**: Counts down.
+    *   **Create**: `timer.New(duration)` or `timer.NewWithInterval(duration, interval)`.
+    *   **Start**: `m.timer.Init()` or `m.timer.Start()` returns `Cmd`.
+    *   **Events**: Receives `timer.TickMsg` (contains `Timeout bool`). Emits `timer.TimeoutMsg` on completion.
+    *   **Control**: `Stop()`, `Toggle()`, `Reset()`.
+    *   **View**: `m.timer.View()` shows remaining time. `m.timer.Timedout()` and `m.timer.Running()`.
+
+*   **Stopwatch**: Counts up.
+    *   **Create**: `stopwatch.New()` or `stopwatch.NewWithInterval(interval)`.
+    *   **Start**: `m.stopwatch.Init()` or `m.stopwatch.Start()`.
+    *   **Events**: Receives `stopwatch.TickMsg`.
+    *   **Control**: `Stop()`, `Toggle()`, `Reset()`.
+    *   **View**: `m.stopwatch.View()` shows elapsed time. `m.stopwatch.Elapsed()`, `m.stopwatch.Running()`.
+
+### Cursor
+
+Manages cursor appearance and blinking for input fields. Used by `TextInput` and `TextArea`.
+*   **Create**: `cursor.New()`
+*   **Configure**:
+    *   `c.BlinkSpeed = time.Millisecond * 500`
+    *   `c.Style`: Lip Gloss style for the cursor block.
+    *   `c.TextStyle`: Style for the character *under* the cursor when blinking off.
+    *   `c.SetMode(cursor.CursorStatic)` (Modes: `CursorBlink`, `CursorStatic`, `CursorHide`).
+*   **Focus/Blur**: `c.Focus()` and `c.Blur()` control blinking and visibility. `Focus()` returns `BlinkCmd` if needed.
+*   **Update**: Handles `BlinkMsg` and `FocusMsg`/`BlurMsg`.
+*   **View**: `c.View()` renders the character under the cursor, styled appropriately (reversed if cursor is "on", normal if "off" or hidden). `c.SetChar(string)` sets the character.
+
+---
+
+## 8. Advanced Bubble Tea Techniques
+
+### Alternate Screen Buffer
+
+The alternate screen buffer allows your TUI to take over the entire terminal window without affecting the user's scrollback history. When the program exits, the terminal returns to its previous state.
+
+*   **Start with Alt Screen**: `tea.NewProgram(model, tea.WithAltScreen())`
+*   **Enter/Exit during runtime**:
+    *   Send `tea.EnterAltScreen()` as a `Cmd` from `Update`.
+    *   Send `tea.ExitAltScreen()` as a `Cmd` from `Update`.
+*   Bubble Tea automatically exits the alt screen when the program quits.
+
+### Sending Messages from Outside (`Program.Send`)
+
+You can send messages to a running Bubble Tea program from other goroutines using `program.Send(myMsg)`. This is useful for real-time updates or integrating with external event sources.
+
+```go
+// In main or another goroutine
+go func() {
+    time.Sleep(2 * time.Second)
+    p.Send(MyCustomMsg{Data: "Hello from outside!"})
+}()
+
+// Your Update function will then receive MyCustomMsg
+```
+`Send` will block if the program's message channel is full. It's a no-op if the program has exited.
+
+### Printing Above the TUI (`tea.Println`)
+
+If you need to print information that scrolls above your TUI (like logs or debug output in a non-alt-screen app), use `tea.Println("My message")` or `tea.Printf("Value: %d", val)`. These return `Cmd`s.
+
+This output is unmanaged by Bubble Tea's renderer and will persist. It's generally not used if the alt screen is active.
+
+### Program Options (`With...`)
+
+When creating a `tea.NewProgram`, you can pass various options:
+*   `tea.WithInput(io.Reader)`: Specify a custom input source (e.g., `bytes.Buffer` for tests). `nil` disables input.
+*   `tea.WithOutput(io.Writer)`: Specify a custom output.
+*   `tea.WithAltScreen()`: Start in alternate screen mode.
+*   `tea.WithMouseCellMotion()`, `tea.WithMouseAllMotion()`: Enable mouse support.
+*   `tea.WithoutRenderer()`: Disable TUI rendering. Useful for daemons or CLI tools that might conditionally show a TUI.
+*   `tea.WithFilter(func(Model, Msg) Msg)`: Intercept messages before `Update`. Return `nil` to discard the message.
+*   `tea.WithContext(context.Context)`: Allow external cancellation of the program.
+*   `tea.WithoutCatchPanics()`: Disable default panic recovery.
+*   `tea.WithReportFocus()`: Enable focus/blur messages.
+
+### Suspending and Resuming
+
+To handle `Ctrl+Z` (suspend), your `Update` function can return `tea.Suspend()` command.
+Bubble Tea will:
+1. Release the terminal.
+2. Send `SIGTSTP` to the process group.
+When the process is resumed (e.g., with `fg` shell command), Bubble Tea will:
+1. Reinitialize the terminal.
+2. Send a `tea.ResumeMsg` to your `Update` function.
+
+This is supported on Unix-like systems.
+
+---
+
+## 9. Debugging Your Application
+
+Since your TUI occupies `stdout`, direct `fmt.Println` calls for debugging won't work as expected.
+
+*   **Log to a file**:
+    ```go
+    // In main, before p.Run()
+    f, err := tea.LogToFile("debug.log", "myapp")
+    if err != nil {
+        // ... handle error ...
+    }
+    defer f.Close()
+
+    // In your Update or other functions:
+    log.Println("Current state:", m.someValue)
+    ```
+    Then `tail -f debug.log` in another terminal.
+
+*   **Using Delve (dlv)**:
+    Run Delve in headless mode: `dlv debug --headless --api-version=2 --listen=127.0.0.1:43000 .`
+    Connect from another terminal or your IDE: `dlv connect 127.0.0.1:43000`
+
+---
+
+## 10. Project Structure and Best Practices
+
+### Organizing Code
+
+*   **Separate Models**: For complex applications, break down your UI into smaller, manageable components (bubbles). Each component can have its own Model, Init, Update, and View. Your main model then composes these smaller models.
+*   **Message Scoping**: If components generate similar messages, consider wrapping them in a new message type or adding an ID to differentiate their origin.
+*   **KeyMaps**: Use the `bubbles/key` package to define `KeyMap` structs for your main model and components. This makes keybindings explicit and integrates well with `bubbles/help`.
+
+### Managing Dependencies
+
+Use Go modules (`go.mod`, `go.sum`). The provided `go.mod` files show dependencies on `bubbletea`, `bubbles`, `lipgloss`, and their transitive dependencies like `termenv`, `reflow`, `uniseg`, etc.
+
+The `dependabot.yml` files indicate a setup for automatic dependency updates for Go modules and GitHub Actions, scheduled weekly.
+
+### CI/CD Setup (Overview from `.github` files)
+
+The `.github` directory in the provided projects showcases a typical CI/CD setup for a Charm-style Go project:
+*   **`CODEOWNERS`**: Defines who is responsible for reviewing changes in different parts of the codebase.
+*   **`ISSUE_TEMPLATE`**: Standardized templates for bug reports and feature requests.
+*   **`dependabot.yml`**: Configuration for Dependabot to keep dependencies up-to-date.
+*   **Workflows (`.github/workflows`)**:
+    *   `build.yml`: Compiles the project on pushes and pull requests, often across different Go versions and OSes. Uses reusable workflows from `charmbracelet/meta`.
+    *   `coverage.yml`: Runs tests with race detection and code coverage, uploading results to a service like Codecov.
+    *   `lint.yml`: Runs linters (e.g., `golangci-lint` configured via `.golangci.yml`) to ensure code quality.
+    *   `release.yml`: Automates the release process using `goreleaser` (configured via `.goreleaser.yml`) when a new tag is pushed. This often includes building binaries for multiple platforms, creating GitHub releases, and potentially publishing to package managers or announcing on social media.
+    *   `*-sync.yml`: Workflows to sync configurations (like linter or dependabot settings) from a central `charmbracelet/meta` repository.
+
+This setup promotes consistency, automates common tasks, and helps maintain code quality and security.
+
+---
+
+## 11. Conclusion and Further Resources
+
+You now have a comprehensive overview of building terminal applications with Bubble Tea, Bubbles, and Lip Gloss. The key is to understand the flow of Model -> Update -> View, how commands and messages facilitate I/O, and how to leverage Lip Gloss for styling and Bubbles for pre-built UI logic.
+
+**Key Takeaways:**
+*   Embrace the Elm Architecture for clear, stateful applications.
+*   Keep your `Update` function as a pure state transition function; delegate I/O to `Cmd`s.
+*   Use Lip Gloss for all your styling needs; it's powerful and flexible.
+*   Leverage Bubbles components to accelerate development and ensure consistent behavior.
+*   Don't be afraid to create your own custom bubbles (components) by following the `tea.Model` interface.
+
+**Further Resources:**
+*   **Official Bubble Tea Examples**: [github.com/charmbracelet/bubbletea/examples](https://github.com/charmbracelet/bubbletea/tree/master/examples)
+*   **Official Bubbles Examples**: The `bubbles` components are often demonstrated within the Bubble Tea examples, or have their own if they are complex (e.g., in the `bubbles` repo itself under an `examples` dir, though not explicitly provided in your input).
+*   **Official Lip Gloss Examples**: [github.com/charmbracelet/lipgloss/examples](https://github.com/charmbracelet/lipgloss/tree/master/examples)
+*   **Charm Blog & YouTube**: Charm often posts tutorials and showcases on their blog and YouTube channel.
+*   **Charm Discord**: A great place to ask questions and see what others are building: [charm.sh/chat](https://charm.sh/chat)
+
+Happy building!
