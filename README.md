@@ -19,18 +19,26 @@ A Go CLI utility that uses the Anthropic Claude API to generate shell commands b
 - Go 1.24.3 or later
 - An Anthropic API key
 
+#### Installing Go (macOS)
+
+If you don't have Go installed, you can install it using Homebrew:
+
+```bash
+brew install go
+```
+
+### Install Globally (Recommended)
+
+```bash
+go install github.com/benmyles/clippycli@latest
+```
+
 ### Build from Source
 
 ```bash
 git clone https://github.com/benmyles/clippycli.git
 cd clippycli
 go build -o clippycli
-```
-
-### Install Globally
-
-```bash
-go install github.com/benmyles/clippycli@latest
 ```
 
 ## Configuration
@@ -47,6 +55,34 @@ You can add this to your shell profile (`.bashrc`, `.zshrc`, etc.) to make it pe
 echo 'export ANTHROPIC_API_KEY="your_api_key_here"' >> ~/.zshrc
 source ~/.zshrc
 ```
+
+### Creating an Alias for Easier Usage
+
+For even more convenient usage, you can create a shell alias. This is especially useful if you prefer not to set the API key globally or want a shorter command:
+
+```bash
+alias cc="ANTHROPIC_API_KEY=YOUR_API_KEY clippycli"
+```
+
+Replace `YOUR_API_KEY` with your actual Anthropic API key. Add this to your shell profile to make it permanent:
+
+```bash
+echo 'alias cc="ANTHROPIC_API_KEY=your_api_key_here clippycli"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Now you can use ClippyCLI with just:
+
+```bash
+cc "list all files"
+cc "find large files over 100MB"
+cc -v "show memory usage"
+```
+
+This approach allows you to:
+- Use a short, memorable command (`cc`)
+- Keep your API key private (not in your shell history when set via alias)
+- Easily switch between different API keys if needed
 
 ## Usage
 
